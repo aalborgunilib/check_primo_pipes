@@ -1,0 +1,270 @@
+#!/usr/bin/perl -w
+
+# Nagios (and compatible) plugin to monitor the status of pipes in Ex Libris
+# Primo library discovery system
+#
+# (c) 2015 Kasper Løvschall and Aalborg University Library
+#
+# This software is free software; you can redistribute it and/or modify
+# it under the same terms as Perl itself.
+
+use strict;
+use warnings;
+
+use LWP::UserAgent;
+use File::Basename;
+use Monitoring::Plugin;
+use Mojo::DOM;
+
+use vars qw($VERSION $PROGNAME $verbose $warn $critical $timeout $result);
+
+$PROGNAME = basename($0);
+$VERSION = "1.0.0";
+
+# Instantiate plugin object
+my $p = Monitoring::Plugin->new(
+	usage => "Usage: %s
+	[ -H|--hostname=<Primo back office URL> ]
+	[ -i|--customerid=<customer id> ]
+	[ -u|--username=<user name> ]
+	[ -p|--password=<password> ]
+	[ -n|--pipe=<pipe name>]
+	[ -j|--cookiejar=<filename> ]
+	[ -t|--timeout=<timeout> ]
+	[ -v|--verbose ]",
+	plugin => $PROGNAME,
+	version => $VERSION,
+	timeout => 15,
+	url => 'https://github.com/aalborgunilib/check_primo_pipes',
+	blurb => 'This plugin will monitor the status of pipes in Ex Libris Primo.',
+);
+
+# Define command line options
+$p->add_arg(
+	spec => 'hostname|H=s',
+	help =>	qq{-H, --hostname=URL\n   The Primo back office URL.},
+	required => 1,
+);
+
+$p->add_arg(
+	spec => 'customerid|i=i',
+	help =>	qq{-p --port=INTEGER\n   Primo back office customer id.},
+	required => 1,
+);
+
+$p->add_arg(
+	spec => 'username|u=s',
+	help =>	qq{-u, --username=STRING\n   The Primo back office user name with minimum "Staff User" rights.},
+	required => 1,
+);
+
+$p->add_arg(
+	spec => 'password|p=s',
+	help =>	qq{-p, --password=STRING\n   The Primo back office password.},
+	required => 1,
+);
+
+$p->add_arg(
+	spec => 'pipe|n=s',
+	help =>	qq{-n, --pipe=STRING\n   Only query the specific pipe name.},
+	required => 0,
+);
+
+$p->add_arg(
+	spec => 'cookiejar|j=s',
+	help =>	qq{-j, --cookiejar=STRING\n   Location of the cookiejar file for storing the session information.},
+	required => 0,
+	default => '/tmp/check_primo_pipes_cookiejar.dat'
+);
+
+
+# Parse arguments and process standard ones
+$p->getopts;
+
+# Honour plugin timeout
+alarm $p->opts->timeout;
+
+# Login to Primo back office
+if ( get_login() ) {
+	# Get the list of pipes back
+	my @pipes = get_pipe_list();
+	if ( @pipes ) {
+
+		my $elements;
+		my %pipe_by_status;
+		my @status_by_count;
+		
+		foreach my $pipe ( @pipes ) {
+			# Combine status code with pipes matching it
+			$pipe_by_status{$pipe->{status}} .= $pipe->{name} . " ";
+			# Keep track of each status for later counting
+			push @status_by_count, $pipe->{status};
+		}
+
+		# Count the different statuses
+		my %status_counts;
+		$status_counts{$_}++ for @status_by_count;
+
+		my $message;
+		my $flag_warning = 0;
+		my $flag_critical = 0;
+
+		# Compact display will count the number of pipes with a certain status
+		$elements = ( scalar keys %status_counts )-1;
+		foreach my $status ( sort keys %status_counts ) {
+			$message .= "status '". $status . "': " . $status_counts{$status};
+			$message .= ", " if $elements--;
+
+			# This status will set the CRITICAL flag
+			if ( $status eq 'stopped error' || $status eq 'stopped harvest error' || $status eq 'threshold exceeded error') {
+				$flag_critical = 1;
+			}
+			# This status will set the WARNING flag
+			#elsif ( $status eq 'stopped harvest error' ) {
+			#	$flag_warning = 1;
+			#}
+
+		}
+
+		# Detailed display (-v) will list the pipe names with a certain status
+		if ( $p->opts->verbose == 1 ) {
+			$message = '';
+			foreach my $status ( sort keys %pipe_by_status ) {
+				my $list_of_pipes = $pipe_by_status{$status};
+				$list_of_pipes =~ s/ (?!$)/, /g;
+				$message .= "status '" . $status . "': " . $list_of_pipes . " ";
+			}
+		}
+
+		# Spew debugging informaion
+		#use Data::Dumper;
+		#print Data::Dumper::Dumper(\@pipes);
+		#print Data::Dumper::Dumper(\@status_by_count);
+		#print Data::Dumper::Dumper(\%status_counts);
+
+		# Return CRITICAL
+		if ( $flag_critical ) {
+			$p->plugin_exit( CRITICAL, $message );
+		}
+		# Or return WARNING
+		elsif ( $flag_warning ) {
+			$p->plugin_exit( WARNING, $message );
+		}
+		# Default to OK
+		else {
+			$p->plugin_exit( OK, $message );
+		}
+	}
+	else {
+		$p->plugin_die("unable get the list of pipes from back office!");
+	}
+}
+# Unable to login to back office
+else {
+	$p->plugin_die("unable to login to back office; credentials or customerid might be wrong!");
+}
+
+#
+# Subs
+#
+
+# Get and parse the "Pipe Monitoring" page from Primo back office
+sub get_pipe_list {
+	my $pipe_list_url = $p->opts->hostname . '/primo_publishing/admin/action/pipeList.do?listCurrentAction=list&menuKey=general.menu.monitoring.monitorPrimoStatus.pipeMonitoring';
+
+	# Get the stored session information (login credentials) from a cookie
+	my $ua = LWP::UserAgent->new();
+	$ua->cookie_jar({
+		file => $p->opts->cookiejar,
+	});
+
+	# Fetch the pipe list
+	my $response = $ua->get( $pipe_list_url );
+
+	if ( $response->is_success ) {
+		# Put the pipe status page into a DOM object
+		my $dom = Mojo::DOM->new( $response->decoded_content );
+
+		my $i = 0;
+		my @pipes;
+
+		# Iterate through each pipe row and parse
+		for my $pipe ( $dom->find('tr.pipeRow')->each ) {
+
+			my $pipe_name = $pipe->at("#pipeName-$i")->text;
+			my $pipe_owner = $pipe->at("#pipeOwner-$i")->text;
+			my $pipe_type = $pipe->at("#pipeType-$i")->text;
+			my $pipe_stage = $pipe->at("#pipeStage-$i")->text;
+			my $pipe_status = $pipe->at("#pipeStatus-$i")->at('a')->text;
+			my $pipe_extended_status;
+			if ( $pipe->at("#pipeStatus-$i")->find('img')->each ) {
+				$pipe_extended_status = $pipe->at("#pipeStatus-$i")->at('img')->attr('title');
+				# Fix: Take the first line of the extended status only as it could be a long Java Exception message
+				if ( $pipe_extended_status =~ m/(.*)(\n|$)/ ) {
+					$pipe_extended_status = $1;
+				}
+			}
+			my $pipe_status_page = $p->opts->hostname . '/' . $pipe->at("#monitorPipeStatus-$i")->attr('href');
+			my $pipe_history_page = $p->opts->hostname . '/' . $pipe->at("#showPipeHistory-$i")->attr('href');
+
+			# Fix: If the pipe name was truncated by the back office then get the full name from
+			# the pipe history page
+			if ( $pipe_name =~ m/\.\.\.$/ && $pipe_history_page =~ m/name=(.*?)($|&)/ ) {
+				$pipe_name = $1;
+			}
+
+			# Add information to the pipes array
+			push @pipes, {
+				owner => $pipe_owner,
+				name => $pipe_name,
+				type => $pipe_type,
+				stage => $pipe_stage,
+				status => $pipe_status,
+				status_page => $pipe_status_page,
+				history_page => $pipe_history_page,
+				extended_status => $pipe_extended_status
+			} if ( ! $p->opts->pipe || $p->opts->pipe eq $pipe_name );
+
+			$i++;
+		}
+		return @pipes;
+	}
+
+	# Unable to get list
+	return 0;
+}
+
+# Login to Primo back office and store the "credentials" in a cookie jar
+sub get_login {
+	my $login_url = $p->opts->hostname . '/primo_publishing/admin/j_acegi_security_check';
+
+	# Parameters from the file acegilogin.jsp
+	my %form = (
+		j_username => $p->opts->username,
+		j_password => $p->opts->password,
+		customerId => $p->opts->customerid
+	);
+
+	# Store the session information in a cookie
+	# Both session cookies are set to be discarded but we need to force-save them
+	my $ua = LWP::UserAgent->new();
+	$ua->cookie_jar({
+		autosave => 1,
+		ignore_discard => 1,
+		file => $p->opts->cookiejar,
+	});
+
+	# Try to login to the Primo back office and set cookies
+	my $response = $ua->post( $login_url, \%form );
+
+	# We can only check if login was successful from the 302 redirect header
+	my $location = $response->header('location');
+
+	# Success if we are redirected to menus.do (the main menu)
+	if ( $location =~ m/menus\.do/ ) {
+		return 1;
+	}
+	
+	# Login failed
+	return 0;
+}
