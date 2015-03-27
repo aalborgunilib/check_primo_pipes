@@ -61,8 +61,6 @@ Or maybe (if something is wrong):
 
 `-v|--verbose` will switch to the more detailed status view.
 
-### Icinga 2 configuration ###
-
 ## Todo or future ideas
 
 * Identify stale pipes
