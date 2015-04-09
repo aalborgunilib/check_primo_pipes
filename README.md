@@ -1,7 +1,7 @@
 # check_primo_pipes
 A plugin for Nagios (and other compatible monitoring services) to monitor the status of pipes in Ex Libris Primo library discovery system. It will alert in case of pipes in state: stopped error, stopped harvest error, and threshold exceeded error.
 
-It also features rudimentary support for identifying stale pipes. This works if you provide an expected maximum of hours a pipe should be in a running state. If a pipe is running above this threshold, a warning is issued.
+It also features rudimentary support for identifying stalled pipes. This works if you provide an expected maximum (in hours) a pipe should be in a running state. If a pipe exceeds the threshold, a warning is issued.
 
 ## About
 As Ex Libris Primo does not provide users with an API to the back office this plugin can monitor pipes using "screen scraping" via the HTML.
@@ -56,7 +56,7 @@ Or maybe (if something is wrong):
 
 `-n|--pipe` is the name of a single pipe that will be checked. If omitted all pipes will be checked.
 
-`-T|--hours` is the maximum number of hours any pipe should complete in. If the threshold is exceeded a warning is issued. If omitted detection for stale pipes is disabled.
+`-T|--hours` is the maximum number of hours any pipe should complete in. If the threshold is exceeded a warning is issued. If omitted detection for stalled pipes is disabled.
 
 `-j|--cookiejar` is the filename (including path) where session cookies will be stored. It defaults to `/tmp/check_primo_pipes_cookiejar.dat`.
 
@@ -66,7 +66,7 @@ Or maybe (if something is wrong):
 
 ## Todo or future ideas
 
-* Make stale pipe detection more sophisticated
+* Make stalled pipe detection more sophisticated
 * Make it possible to define a list of pipes to include / exclude
 * Monitor the process list
 * Monitor the execution time of pipes (performance data)

@@ -76,7 +76,7 @@ $p->add_arg(
 
 $p->add_arg(
 	spec => 'hours|T=i',
-	help =>	qq{-T, --hours=INTEGER\n   A pipe running for more than <hours> will be considered stale and a warning will be issued.},
+	help =>	qq{-T, --hours=INTEGER\n   A pipe running for more than <hours> will be considered stalled and a warning will be issued.},
 	required => 0,
 );
 
@@ -104,7 +104,7 @@ if ( get_login() ) {
 		my %pipe_by_status;
 		my @status_by_count;
 		
-		my $stale_pipe = 0;
+		my $stalled_pipe = 0;
 
 		foreach my $pipe ( @pipes ) {
 			# Combine status code with pipes matching it
@@ -112,7 +112,7 @@ if ( get_login() ) {
 			# Keep track of each status for later counting
 			push @status_by_count, $pipe->{status};
 
-			# Check job details for running pipes to track stale pipes
+			# Check job details for running pipes to track stalled pipes
 			if ( $p->opts->hours && $pipe->{status} eq 'running' ) {
 				# Get the start time of the job (in unix time)
 				my $job_start_time = check_job_details( $pipe->{status_page} );
@@ -122,7 +122,7 @@ if ( get_login() ) {
 				my $job_running_time = Time::Seconds->new($timediff);
 
 				if ( $p->opts->hours <= $job_running_time->hours ) {
-					$stale_pipe = "possible stale pipe $pipe->{name} running in stage '$pipe->{stage}' for " . floor($job_running_time->hours) . " hours";
+					$stalled_pipe = "possible stalled pipe $pipe->{name} running in stage '$pipe->{stage}' for " . floor($job_running_time->hours) . " hours";
 				}
 			}
 		}
@@ -172,9 +172,9 @@ if ( get_login() ) {
 		if ( $flag_critical ) {
 			$p->plugin_exit( CRITICAL, $message );
 		}
-		# Or return WARNING on stale pipe
-		elsif ( $stale_pipe ) {
-			$p->plugin_exit( WARNING, "$stale_pipe  $message" )
+		# Or return WARNING on stalled pipe
+		elsif ( $stalled_pipe ) {
+			$p->plugin_exit( WARNING, "$stalled_pipe  $message" )
 		}
 		# Or return WARNING
 		elsif ( $flag_warning ) {
