@@ -15,6 +15,9 @@ use LWP::UserAgent;
 use File::Basename;
 use Monitoring::Plugin;
 use Mojo::DOM;
+use Date::Parse;
+use Time::Seconds;
+use POSIX;
 
 use vars qw($VERSION $PROGNAME $verbose $warn $critical $timeout $result);
 
@@ -29,6 +32,7 @@ my $p = Monitoring::Plugin->new(
 	[ -u|--username=<user name> ]
 	[ -p|--password=<password> ]
 	[ -n|--pipe=<pipe name>]
+	[ -T|--hours=<max number of hours> ]
 	[ -j|--cookiejar=<filename> ]
 	[ -t|--timeout=<timeout> ]
 	[ -v|--verbose ]",
@@ -71,6 +75,12 @@ $p->add_arg(
 );
 
 $p->add_arg(
+	spec => 'hours|T=i',
+	help =>	qq{-T, --hours=INTEGER\n   A pipe running for more than <hours> will be considered stale and a warning will be issued.},
+	required => 0,
+);
+
+$p->add_arg(
 	spec => 'cookiejar|j=s',
 	help =>	qq{-j, --cookiejar=STRING\n   Location of the cookiejar file for storing the session information.},
 	required => 0,
@@ -94,11 +104,27 @@ if ( get_login() ) {
 		my %pipe_by_status;
 		my @status_by_count;
 		
+		my $stale_pipe = 0;
+
 		foreach my $pipe ( @pipes ) {
 			# Combine status code with pipes matching it
 			$pipe_by_status{$pipe->{status}} .= $pipe->{name} . " ";
 			# Keep track of each status for later counting
 			push @status_by_count, $pipe->{status};
+
+			# Check job details for running pipes to track stale pipes
+			if ( $p->opts->hours && $pipe->{status} eq 'running' ) {
+				# Get the start time of the job (in unix time)
+				my $job_start_time = check_job_details( $pipe->{status_page} );
+				# Get the time difference between now and job start time (in unix time)
+				my $timediff = time() - $job_start_time;
+
+				my $job_running_time = Time::Seconds->new($timediff);
+
+				if ( $p->opts->hours <= $job_running_time->hours ) {
+					$stale_pipe = "possible stale pipe $pipe->{name} running in stage '$pipe->{stage}' for " . floor($job_running_time->hours) . " hours";
+				}
+			}
 		}
 
 		# Count the different statuses
@@ -146,6 +172,10 @@ if ( get_login() ) {
 		if ( $flag_critical ) {
 			$p->plugin_exit( CRITICAL, $message );
 		}
+		# Or return WARNING on stale pipe
+		elsif ( $stale_pipe ) {
+			$p->plugin_exit( WARNING, "$stale_pipe  $message" )
+		}
 		# Or return WARNING
 		elsif ( $flag_warning ) {
 			$p->plugin_exit( WARNING, $message );
@@ -167,6 +197,33 @@ else {
 #
 # Subs
 #
+
+# Get and parse the "Job details" page from Primo back office
+sub check_job_details {
+	my $job_details_url = shift;
+
+	# Get the stored session information (login credentials) from a cookie
+	my $ua = LWP::UserAgent->new();
+	$ua->cookie_jar({
+		file => $p->opts->cookiejar,
+	});
+
+	# Fetch the pipe status page (job details)
+	my $response = $ua->get( $job_details_url );
+
+	if ( $response->is_success ) {
+		# Put the pipe status page into a DOM object
+		my $dom = Mojo::DOM->new( $response->decoded_content );
+
+		# Get job start/end time
+		my $job_start_time = $dom->at('td#jobStartTime')->text;
+		#my $job_end_time = $dom->at('td#jobEndTime')->text;
+
+		# Return job start time (in unix time)
+		return Date::Parse::str2time($job_start_time);
+	}
+	return 0;
+}
 
 # Get and parse the "Pipe Monitoring" page from Primo back office
 sub get_pipe_list {
@@ -204,8 +261,8 @@ sub get_pipe_list {
 					$pipe_extended_status = $1;
 				}
 			}
-			my $pipe_status_page = $p->opts->hostname . '/' . $pipe->at("#monitorPipeStatus-$i")->attr('href');
-			my $pipe_history_page = $p->opts->hostname . '/' . $pipe->at("#showPipeHistory-$i")->attr('href');
+			my $pipe_status_page = $p->opts->hostname . '/primo_publishing/admin/action/' . $pipe->at("#monitorPipeStatus-$i")->attr('href');
+			my $pipe_history_page = $p->opts->hostname . '/primo_publishing/admin/action/' . $pipe->at("#showPipeHistory-$i")->attr('href');
 
 			# Fix: If the pipe name was truncated by the back office then get the full name from
 			# the pipe history page
