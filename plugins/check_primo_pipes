@@ -22,7 +22,7 @@ use POSIX;
 use vars qw($VERSION $PROGNAME $verbose $warn $critical $timeout $result);
 
 $PROGNAME = basename($0);
-$VERSION = "1.0.0";
+$VERSION = "1.1.0";
 
 # Instantiate plugin object
 my $p = Monitoring::Plugin->new(
