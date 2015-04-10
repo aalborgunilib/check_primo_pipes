@@ -23,7 +23,7 @@ use Try::Tiny;
 use vars qw($VERSION $PROGNAME $verbose $warn $critical $timeout $result);
 
 $PROGNAME = basename($0);
-$VERSION = "1.1.0";
+$VERSION = "1.1.1";
 
 # Instantiate plugin object
 my $p = Monitoring::Plugin->new(
