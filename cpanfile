@@ -4,3 +4,4 @@ requires 'Mojo::DOM';
 requires 'Monitoring::Plugin';
 requires 'Date::Parse';
 requires 'Time::Seconds';
+requires 'Try::Tiny';

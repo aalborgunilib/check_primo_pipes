@@ -18,6 +18,7 @@ use Mojo::DOM;
 use Date::Parse;
 use Time::Seconds;
 use POSIX;
+use Try::Tiny;
 
 use vars qw($VERSION $PROGNAME $verbose $warn $critical $timeout $result);
 
@@ -121,7 +122,7 @@ if ( get_login() ) {
 
 				my $job_running_time = Time::Seconds->new($timediff);
 
-				if ( $p->opts->hours <= $job_running_time->hours ) {
+				if ( $job_start_time && $p->opts->hours <= $job_running_time->hours ) {
 					$stalled_pipe = "possible stalled pipe $pipe->{name} running in stage '$pipe->{stage}' for " . floor($job_running_time->hours) . " hours";
 				}
 			}
@@ -216,11 +217,13 @@ sub check_job_details {
 		my $dom = Mojo::DOM->new( $response->decoded_content );
 
 		# Get job start/end time
-		my $job_start_time = $dom->at('td#jobStartTime')->text;
-		#my $job_end_time = $dom->at('td#jobEndTime')->text;
+		my $job_start_time;
+		try {
+			my $job_start_time = $dom->at('td#jobStartTime')->text;
+		};
 
 		# Return job start time (in unix time)
-		return Date::Parse::str2time($job_start_time);
+		return Date::Parse::str2time($job_start_time) if $job_start_time;
 	}
 	return 0;
 }
@@ -246,44 +249,46 @@ sub get_pipe_list {
 		my @pipes;
 
 		# Iterate through each pipe row and parse
-		for my $pipe ( $dom->find('tr.pipeRow')->each ) {
+		try {
+			for my $pipe ( $dom->find('tr.pipeRow')->each ) {
 
-			my $pipe_name = $pipe->at("#pipeName-$i")->text;
-			my $pipe_owner = $pipe->at("#pipeOwner-$i")->text;
-			my $pipe_type = $pipe->at("#pipeType-$i")->text;
-			my $pipe_stage = $pipe->at("#pipeStage-$i")->text;
-			my $pipe_status = $pipe->at("#pipeStatus-$i")->at('a')->text;
-			my $pipe_extended_status;
-			if ( $pipe->at("#pipeStatus-$i")->find('img')->each ) {
-				$pipe_extended_status = $pipe->at("#pipeStatus-$i")->at('img')->attr('title');
-				# Fix: Take the first line of the extended status only as it could be a long Java Exception message
-				if ( $pipe_extended_status =~ m/(.*)(\n|$)/ ) {
-					$pipe_extended_status = $1;
+				my $pipe_name = $pipe->at("#pipeName-$i")->text;
+				my $pipe_owner = $pipe->at("#pipeOwner-$i")->text;
+				my $pipe_type = $pipe->at("#pipeType-$i")->text;
+				my $pipe_stage = $pipe->at("#pipeStage-$i")->text;
+				my $pipe_status = $pipe->at("#pipeStatus-$i")->at('a')->text;
+				my $pipe_extended_status;
+				if ( $pipe->at("#pipeStatus-$i")->find('img')->each ) {
+					$pipe_extended_status = $pipe->at("#pipeStatus-$i")->at('img')->attr('title');
+					# Fix: Take the first line of the extended status only as it could be a long Java Exception message
+					if ( $pipe_extended_status =~ m/(.*)(\n|$)/ ) {
+						$pipe_extended_status = $1;
+					}
 				}
+				my $pipe_status_page = $p->opts->hostname . '/primo_publishing/admin/action/' . $pipe->at("#monitorPipeStatus-$i")->attr('href');
+				my $pipe_history_page = $p->opts->hostname . '/primo_publishing/admin/action/' . $pipe->at("#showPipeHistory-$i")->attr('href');
+
+				# Fix: If the pipe name was truncated by the back office then get the full name from
+				# the pipe history page
+				if ( $pipe_name =~ m/\.\.\.$/ && $pipe_history_page =~ m/name=(.*?)($|&)/ ) {
+					$pipe_name = $1;
+				}
+
+				# Add information to the pipes array
+				push @pipes, {
+					owner => $pipe_owner,
+					name => $pipe_name,
+					type => $pipe_type,
+					stage => $pipe_stage,
+					status => $pipe_status,
+					status_page => $pipe_status_page,
+					history_page => $pipe_history_page,
+					extended_status => $pipe_extended_status
+				} if ( ! $p->opts->pipe || $p->opts->pipe eq $pipe_name );
+
+				$i++;
 			}
-			my $pipe_status_page = $p->opts->hostname . '/primo_publishing/admin/action/' . $pipe->at("#monitorPipeStatus-$i")->attr('href');
-			my $pipe_history_page = $p->opts->hostname . '/primo_publishing/admin/action/' . $pipe->at("#showPipeHistory-$i")->attr('href');
-
-			# Fix: If the pipe name was truncated by the back office then get the full name from
-			# the pipe history page
-			if ( $pipe_name =~ m/\.\.\.$/ && $pipe_history_page =~ m/name=(.*?)($|&)/ ) {
-				$pipe_name = $1;
-			}
-
-			# Add information to the pipes array
-			push @pipes, {
-				owner => $pipe_owner,
-				name => $pipe_name,
-				type => $pipe_type,
-				stage => $pipe_stage,
-				status => $pipe_status,
-				status_page => $pipe_status_page,
-				history_page => $pipe_history_page,
-				extended_status => $pipe_extended_status
-			} if ( ! $p->opts->pipe || $p->opts->pipe eq $pipe_name );
-
-			$i++;
-		}
+		};
 		return @pipes;
 	}
 
