@@ -23,7 +23,7 @@ use Try::Tiny;
 use vars qw($VERSION $PROGNAME $verbose $warn $critical $timeout $result);
 
 $PROGNAME = basename($0);
-$VERSION = "1.1.1";
+$VERSION = "1.2.0";
 
 # Instantiate plugin object
 my $p = Monitoring::Plugin->new(
@@ -34,6 +34,7 @@ my $p = Monitoring::Plugin->new(
 	[ -p|--password=<password> ]
 	[ -n|--pipe=<pipe name>]
 	[ -T|--hours=<max number of hours> ]
+	[ -s|--scheduled=<list of pipes> ]
 	[ -j|--cookiejar=<filename> ]
 	[ -t|--timeout=<timeout> ]
 	[ -v|--verbose ]",
@@ -82,6 +83,11 @@ $p->add_arg(
 );
 
 $p->add_arg(
+	spec => 'scheduled|s=s',
+	help =>	qq{-s, --scheduled=INTEGER\n   Comma separated list of pipe names that should always be enabled in the scheduled tasks list.},
+	required => 0,
+);
+$p->add_arg(
 	spec => 'cookiejar|j=s',
 	help =>	qq{-j, --cookiejar=STRING\n   Location of the cookiejar file for storing the session information.},
 	required => 0,
@@ -97,16 +103,40 @@ alarm $p->opts->timeout;
 
 # Login to Primo back office
 if ( get_login() ) {
-	# Get the list of pipes back
+
+	# Get the list of scheduled pipes
+	my @jobs;
+	@jobs = get_job_scheduler() if $p->opts->scheduled;
+
+	my @disabled_jobs;
+	
+	if ( @jobs ) {
+		# Make array of jobs to be monitored
+		my @monitored_pipes = split(/,/, $p->opts->scheduled);
+
+		# Loop through each scheduled job returned from Primo back office
+		foreach my $job ( @jobs ) {
+			# Skip if it is enabled
+			next if $job->{enabled} eq 'Enabled';
+
+			# If disabled check if the job should be enabled
+			my $process_name = $job->{process_name};
+			if ( grep( /$process_name/, @monitored_pipes ) ) {
+				push @disabled_jobs, $process_name;
+			}
+		}
+	}
+
+	# Get the list of pipes back and die if we are unable to get info
 	my @pipes = get_pipe_list();
+	$p->plugin_die("unable get the list of pipes from back office!") unless @pipes;
+
+	my %pipe_by_status;
+	my @status_by_count;	
+	my $stalled_pipe = 0;
+	
 	if ( @pipes ) {
-
-		my $elements;
-		my %pipe_by_status;
-		my @status_by_count;
-		
-		my $stalled_pipe = 0;
-
+		# Check each pipe
 		foreach my $pipe ( @pipes ) {
 			# Combine status code with pipes matching it
 			$pipe_by_status{$pipe->{status}} .= $pipe->{name} . " ";
@@ -127,69 +157,77 @@ if ( get_login() ) {
 				}
 			}
 		}
+	}
 
-		# Count the different statuses
-		my %status_counts;
-		$status_counts{$_}++ for @status_by_count;
+	# Count the different statuses
+	my %status_counts;
+	$status_counts{$_}++ for @status_by_count;
 
-		my $message;
-		my $flag_warning = 0;
-		my $flag_critical = 0;
+	my $message;
+	my $flag_warning = 0;
+	my $flag_critical = 0;
 
-		# Compact display will count the number of pipes with a certain status
-		$elements = ( scalar keys %status_counts )-1;
-		foreach my $status ( sort keys %status_counts ) {
-			$message .= "status '". $status . "': " . $status_counts{$status};
-			$message .= ", " if $elements--;
+	# Compact display will count the number of pipes with a certain status
+	my $elements = ( scalar keys %status_counts )-1;
+	foreach my $status ( sort keys %status_counts ) {
+		$message .= "pipe status '". $status . "': " . $status_counts{$status};
+		$message .= ", " if $elements--;
 
-			# This status will set the CRITICAL flag
-			if ( $status eq 'stopped error' || $status eq 'stopped harvest error' || $status eq 'threshold exceeded error') {
-				$flag_critical = 1;
-			}
-			# This status will set the WARNING flag
-			#elsif ( $status eq 'stopped harvest error' ) {
-			#	$flag_warning = 1;
-			#}
-
-		}
-
-		# Detailed display (-v) will list the pipe names with a certain status
-		if ( $p->opts->verbose == 1 ) {
-			$message = '';
-			foreach my $status ( sort keys %pipe_by_status ) {
-				my $list_of_pipes = $pipe_by_status{$status};
-				$list_of_pipes =~ s/ (?!$)/, /g;
-				$message .= "status '" . $status . "': " . $list_of_pipes . " ";
-			}
-		}
-
-		# Spew debugging informaion
-		#use Data::Dumper;
-		#print Data::Dumper::Dumper(\@pipes);
-		#print Data::Dumper::Dumper(\@status_by_count);
-		#print Data::Dumper::Dumper(\%status_counts);
-
-		# Return CRITICAL
-		if ( $flag_critical ) {
-			$p->plugin_exit( CRITICAL, $message );
-		}
-		# Or return WARNING on stalled pipe
-		elsif ( $stalled_pipe ) {
-			$p->plugin_exit( WARNING, "$stalled_pipe  $message" )
-		}
-		# Or return WARNING
-		elsif ( $flag_warning ) {
-			$p->plugin_exit( WARNING, $message );
-		}
-		# Default to OK
-		else {
-			$p->plugin_exit( OK, $message );
+		# These statuses will set the CRITICAL flag
+		if ( $status eq 'stopped error' || $status eq 'stopped harvest error' || $status eq 'threshold exceeded error') {
+			$flag_critical = 1;
 		}
 	}
+
+	# Detailed display (-v) will list the pipe names with a certain status
+	if ( $p->opts->verbose == 1 ) {
+		$message = '';
+		foreach my $status ( sort keys %pipe_by_status ) {
+			my $list_of_pipes = $pipe_by_status{$status};
+			$list_of_pipes =~ s/ (?!$)/, /g;
+			$message .= "status '" . $status . "': " . $list_of_pipes . " ";
+		}
+	}
+
+	# Check and flag WARNING for disabled jobs
+	if ( @disabled_jobs && $p->opts->scheduled ) {
+		$flag_warning = 1;
+		# Verbose?
+		if ( $p->opts->verbose == 1 ) {
+			$message = 'scheduled job disabled: ' . join(", ", @disabled_jobs) . "  " . $message;
+		}
+		else {
+			$message = 'scheduled job disabled: ' . scalar @disabled_jobs . "  " . $message;
+		}
+	}
+
+	# Check and flag WARNING for stalled pipes
+	if ( $stalled_pipe ) {
+		$flag_warning = 1;
+		$message = $stalled_pipe . "  " . $message;
+	}
+
+	# Spew debugging informaion
+	#use Data::Dumper;
+	#print Data::Dumper::Dumper(\@pipes);
+	#print Data::Dumper::Dumper(\@jobs);
+	#print Data::Dumper::Dumper(\@status_by_count);
+	#print Data::Dumper::Dumper(\%status_counts);
+
+	# Return CRITICAL
+	if ( $flag_critical ) {
+		$p->plugin_exit( CRITICAL, $message );
+	}
+	# Or return WARNING
+	elsif ( $flag_warning ) {
+		$p->plugin_exit( WARNING, $message );
+	}
+	# Default to OK
 	else {
-		$p->plugin_die("unable get the list of pipes from back office!");
+		$p->plugin_exit( OK, $message );
 	}
 }
+
 # Unable to login to back office
 else {
 	$p->plugin_die("unable to login to back office; credentials or customerid might be wrong!");
@@ -198,6 +236,46 @@ else {
 #
 # Subs
 #
+
+# Get and parse the "Scheduler" page from Primo back office
+sub get_job_scheduler {
+	my $job_scheduler_url = $p->opts->hostname . '/primo_publishing/admin/action/schedule.do?menuKey=general.menu.monitoring.scheduleTasks';
+
+	# Get the stored session information (login credentials) from a cookie
+	my $ua = LWP::UserAgent->new();
+	$ua->cookie_jar({
+		file => $p->opts->cookiejar,
+	});
+
+	# Fetch the pipe status page (job details)
+	my $response = $ua->get( $job_scheduler_url );
+
+	if ( $response->is_success ) {
+		# Put the pipe status page into a DOM object
+		my $dom = Mojo::DOM->new( $response->decoded_content );
+
+		my @scheduled_tasks;
+		# "Walk through" the DOM and fetch the different scheduled pipes
+		for ( my $i = 0; ; $i++ ) {
+			# If ID owner-$i exists
+			if ( $dom->at("#owner-$i") ) {
+				my $type = $dom->at("#type-$i")->text;
+				next if $type ne "PIPE";
+				push @scheduled_tasks, {
+					owner => $dom->at("#owner-$i")->text,
+					process_name => $dom->at("#processName-$i")->text,
+					enabled => $dom->at("#enabled-$i")->text,
+				};
+			}
+			# Else we have reached the end and will exit the loop
+			else {
+				last;
+			}
+		}
+		return @scheduled_tasks;
+	}
+	return 0;
+}
 
 # Get and parse the "Job details" page from Primo back office
 sub check_job_details {
