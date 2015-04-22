@@ -1,14 +1,16 @@
 # check_primo_pipes
 A plugin for Nagios (and other compatible monitoring services) to monitor the status of pipes in Ex Libris Primo library discovery system. It will alert in case of pipes in state: stopped error, stopped harvest error, and threshold exceeded error.
 
-It also features rudimentary support for identifying stalled pipes. This works if you provide an expected maximum (in hours) a pipe should be in a running state. If a pipe exceeds the threshold, a warning is issued.
+It also features rudimentary support for identifying stalled pipes. This works if you provide an expected maximum (in hours) any pipe should be in a running state.
+
+Further, you are able to provide a list of scheduled tasks which should be enabled at any time.
 
 ## About
 As Ex Libris Primo does not provide users with an API to the back office this plugin can monitor pipes using "screen scraping" via the HTML.
 
 The plugin can monitor all available pipes in one go or a just a single pipe at a time. It supports a compact status output or a more detailed list of the current state of the different pipes.
 
-The plugin will require user credentials for the Primo back office and it is recommend that you create a user specifically for monitoring purposes. A user with the role "Staff User" is needed. in addition, the server performing the monitoring will need to have access to the back office URL through the firewall of the Primo server.
+The plugin will require user credentials for the Primo back office and it is recommend that you create a user specifically for monitoring purposes. A user with the role "Staff User" is needed. In addition, the server performing the monitoring will need to have access to the back office URL through the firewall of the Primo server.
 
 ## Installation
 
@@ -44,9 +46,12 @@ Or maybe (if something is wrong):
         [ -p|--password=<password> ]
         [ -n|--pipe=<pipe name>]
         [ -T|--hours=<max number of hours> ]
+        [ -s|--scheduled=<list of pipes> ]
         [ -j|--cookiejar=<filename> ]
         [ -t|--timeout=<timeout> ]
         [ -v|--verbose ]
+
+### Required plugin options
 
 `-H|--hostname` is the url to the Primo server (including http:// or https://). Remember to include the port number (Ex Libris usually defaults to 1701).
 
@@ -54,9 +59,19 @@ Or maybe (if something is wrong):
 
 `-u|--username` and `-p|--password` are your login credentials to the back office.
 
-`-n|--pipe` is the name of a single pipe that will be checked. If omitted all pipes will be checked.
+### Check specific plugin options
 
-`-T|--hours` is the maximum number of hours any pipe should complete in. If the threshold is exceeded a warning is issued. If omitted detection for stalled pipes is disabled.
+If all of the above, required options are set, the plugin will default to check of all defined pipes. If a pipe is in one of the following states: stopped error, stopped harvest error, and threshold exceeded error and the pipe has not been terminated by admin a CRITICAL error will be issued.
+
+`-n|--pipe` is the name of a single pipe that will be checked. By using this option, the plugin can check one pipe at a time. If omitted all pipes will be checked.
+
+`-T|--hours` can be used if you would like to check for stalled pipes. It should be set to the value of the maximum number of hours any pipe should be expected to complete in. If the threshold is exceed a WARNING is issued. If the option is omitted detection for stalled pipes is disabled.
+
+As an example: if the most time consuming of your scheduled pipes usually completes in 2 hours you should probably set the value to 3.
+
+`-s|--scheduled` is a comma separated list of pipe names that should always be enabled in the scheduled tasks list. If one of the listed pipes is disabled (either by admin or a by pipe not being able to run) a WARNING is issued. If omitted detection for scheduled tasks is disabled.
+
+### Miscellaneous plugin options
 
 `-j|--cookiejar` is the filename (including path) where session cookies will be stored. It defaults to `/tmp/check_primo_pipes_cookiejar.dat`.
 
@@ -68,7 +83,6 @@ Or maybe (if something is wrong):
 
 * Make stalled pipe detection more sophisticated
 * Make it possible to define a list of pipes to include / exclude
-* Monitor the process list
 * Monitor the execution time of pipes (performance data)
 * Monitor errors in a pipe run
 
