@@ -10,7 +10,7 @@ As Ex Libris Primo does not provide users with an API to the back office this pl
 
 The plugin can monitor all available pipes in one go or a just a single pipe at a time. It supports a compact status output or a more detailed list of the current state of the different pipes.
 
-The plugin will require user credentials for the Primo back office and it is recommend that you create a user specifically for monitoring purposes. A user with the role "Staff User" is needed. In addition, the server performing the monitoring will need to have access to the back office URL through the firewall of the Primo server.
+The plugin will require user credentials for the Primo back office and it is recommend that you create a user specifically for monitoring purposes. A user with the role "Admin" is needed (prior to April 2015 release the role of "Staff User" was adequate due to an error it seems). In addition, the server performing the monitoring will need to have access to the back office URL through the firewall of the Primo server.
 
 ## Installation
 
