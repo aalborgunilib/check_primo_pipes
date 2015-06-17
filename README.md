@@ -1,9 +1,9 @@
 # check_primo_pipes
-A plugin for Nagios (and other compatible monitoring services) to monitor the status of pipes in Ex Libris Primo library discovery system. It will alert in case of pipes in state: stopped error, stopped harvest error, and threshold exceeded error.
+A plugin for Nagios (and other compatible monitoring services) to monitor the status of pipes in the Ex Libris Primo library discovery system. It will alert you in case of pipes ending up in the following states: stopped error, stopped harvest error, and threshold exceeded error. The alerts are cleared by terminating the pipes in question.
 
-It also features rudimentary support for identifying stalled pipes. This works if you provide an expected maximum (in hours) any pipe should be in a running state.
+The plugin also features a rudimentary support for identifying stalled pipes. This can be monitored if you provide an expected maximum time (a threshold in hours), any pipe would be expected to be in a running state and therefore not to be considered stalled. As soon as the threshold is exceeded, an alert is issued.
 
-Further, you are able to provide a list of scheduled tasks which should be enabled at any time.
+Furthermore, you are able to provide a list of scheduled tasks, which should be enabled at any time. If one of the listed tasks is disabled either by you or automatically by the system an alert is issued.
 
 ## About
 As Ex Libris Primo does not provide users with an API to the back office this plugin can monitor pipes using "screen scraping" via the HTML.
@@ -53,7 +53,7 @@ Or maybe (if something is wrong):
 
 ### Required plugin options
 
-`-H|--hostname` is the url to the Primo server (including http:// or https://). Remember to include the port number (Ex Libris usually defaults to 1701).
+`-H|--hostname` is the url to the Primo BO server (including http:// or https://). Remember to include the port number (Ex Libris usually defaults to 1601).
 
 `-i|--customerid` is a unique number that needs to be extracted from the HTML source code of the login screen to the Primo back office. Look for `<input type="hidden" value="1234567890" name="customerId" />` and take the number from the value attribute.
 
@@ -82,7 +82,7 @@ As an example: if the most time consuming of your scheduled pipes usually comple
 ## Todo or future ideas
 
 * Make stalled pipe detection more sophisticated
-* Make it possible to define a list of pipes to include / exclude
+* Make it possible to define a list of pipes to include / exclude from monitoring
 * Monitor the execution time of pipes (performance data)
 * Monitor errors in a pipe run
 
