@@ -27,7 +27,7 @@ Install Perl dependencies for the plugin via e.g. [cpanm](https://metacpan.org/p
 
 Now, check to see if the plugin is working:
 
-    plugins/check_primo_pipes -H <http://server.hosted.exlibrisgroup.com:1701> -i <customerid> -u <username> -p <password>
+    plugins/check_primo_pipes -H <http://server.hosted.exlibrisgroup.com:1601> -i <customerid> -u <username> -p <password>
 
 You should get something in the line of:
 
