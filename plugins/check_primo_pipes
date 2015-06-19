@@ -109,7 +109,7 @@ if ( get_login() ) {
 	@jobs = get_job_scheduler() if $p->opts->scheduled;
 
 	my @disabled_jobs;
-	
+
 	if ( @jobs ) {
 		# Make array of jobs to be monitored
 		my @monitored_pipes = split(/,/, $p->opts->scheduled);
@@ -132,9 +132,9 @@ if ( get_login() ) {
 	$p->plugin_die("unable get the list of pipes from back office!") unless @pipes;
 
 	my %pipe_by_status;
-	my @status_by_count;	
+	my @status_by_count;
 	my $stalled_pipe = 0;
-	
+
 	if ( @pipes ) {
 		# Check each pipe
 		foreach my $pipe ( @pipes ) {
@@ -334,22 +334,33 @@ sub get_pipe_list {
 				my $pipe_owner = $pipe->at("#pipeOwner-$i")->text;
 				my $pipe_type = $pipe->at("#pipeType-$i")->text;
 				my $pipe_stage = $pipe->at("#pipeStage-$i")->text;
-				my $pipe_status = $pipe->at("#pipeStatus-$i")->at('a')->text;
-				my $pipe_extended_status;
-				if ( $pipe->at("#pipeStatus-$i")->find('img')->each ) {
-					$pipe_extended_status = $pipe->at("#pipeStatus-$i")->at('img')->attr('title');
-					# Fix: Take the first line of the extended status only as it could be a long Java Exception message
-					if ( $pipe_extended_status =~ m/(.*)(\n|$)/ ) {
-						$pipe_extended_status = $1;
-					}
-				}
-				my $pipe_status_page = $p->opts->hostname . '/primo_publishing/admin/action/' . $pipe->at("#monitorPipeStatus-$i")->attr('href');
-				my $pipe_history_page = $p->opts->hostname . '/primo_publishing/admin/action/' . $pipe->at("#showPipeHistory-$i")->attr('href');
 
-				# Fix: If the pipe name was truncated by the back office then get the full name from
-				# the pipe history page
-				if ( $pipe_name =~ m/\.\.\.$/ && $pipe_history_page =~ m/name=(.*?)($|&)/ ) {
-					$pipe_name = $1;
+				my $pipe_status;
+				my $pipe_extended_status;
+				my $pipe_status_page;
+				my $pipe_history_page;
+
+				if ( $pipe->at("#pipeStatus-$i")->find('a')->each ) {
+
+					$pipe_status = $pipe->at("#pipeStatus-$i")->at('a')->text;
+					if ( $pipe->at("#pipeStatus-$i")->find('img')->each ) {
+						$pipe_extended_status = $pipe->at("#pipeStatus-$i")->at('img')->attr('title');
+						# Fix: Take the first line of the extended status only as it could be a long Java Exception message
+						if ( $pipe_extended_status =~ m/(.*)(\n|$)/ ) {
+							$pipe_extended_status = $1;
+						}
+					}
+					$pipe_status_page = $p->opts->hostname . '/primo_publishing/admin/action/' . $pipe->at("#monitorPipeStatus-$i")->attr('href');
+					$pipe_history_page = $p->opts->hostname . '/primo_publishing/admin/action/' . $pipe->at("#showPipeHistory-$i")->attr('href');
+
+					# Fix: If the pipe name was truncated by the back office then get the full name from
+					# the pipe history page
+					if ( $pipe_name =~ m/\.\.\.$/ && $pipe_history_page =~ m/name=(.*?)($|&)/ ) {
+						$pipe_name = $1;
+					}
+
+				} else {
+					$pipe_status = $pipe->at("#pipeStatus-$i")->text;
 				}
 
 				# Add information to the pipes array
@@ -404,7 +415,7 @@ sub get_login {
 	if ( $location =~ m/menus\.do/ ) {
 		return 1;
 	}
-	
+
 	# Login failed
 	return 0;
 }
