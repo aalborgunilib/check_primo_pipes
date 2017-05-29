@@ -259,12 +259,12 @@ sub get_job_scheduler {
 		for ( my $i = 0; ; $i++ ) {
 			# If ID owner-$i exists
 			if ( $dom->at("#owner-$i") ) {
-				my $type = $dom->at("#type-$i")->text;
+				my $type = trim($dom->at("#type-$i")->text);
 				next if $type ne "PIPE";
 				push @scheduled_tasks, {
-					owner => $dom->at("#owner-$i")->text,
-					process_name => $dom->at("#processName-$i")->text,
-					enabled => $dom->at("#enabled-$i")->text,
+					owner => trim($dom->at("#owner-$i")->text),
+					process_name => trim($dom->at("#processName-$i")->text),
+					enabled => trim($dom->at("#enabled-$i")->text),
 				};
 			}
 			# Else we have reached the end and will exit the loop
@@ -297,7 +297,7 @@ sub check_job_details {
 		# Get job start/end time
 		my $job_start_time;
 		try {
-			my $job_start_time = $dom->at('td#jobStartTime')->text;
+			my $job_start_time = trim($dom->at('td#jobStartTime')->text);
 		};
 
 		# Return job start time (in unix time)
@@ -330,10 +330,10 @@ sub get_pipe_list {
 		try {
 			for my $pipe ( $dom->find('tr.pipeRow')->each ) {
 
-				my $pipe_name = $pipe->at("#pipeName-$i")->text;
-				my $pipe_owner = $pipe->at("#pipeOwner-$i")->text;
-				my $pipe_type = $pipe->at("#pipeType-$i")->text;
-				my $pipe_stage = $pipe->at("#pipeStage-$i")->text;
+				my $pipe_name = trim($pipe->at("#pipeName-$i")->text);
+				my $pipe_owner = trim($pipe->at("#pipeOwner-$i")->text);
+				my $pipe_type = trim($pipe->at("#pipeType-$i")->text);
+				my $pipe_stage = trim($pipe->at("#pipeStage-$i")->text);
 
 				my $pipe_status;
 				my $pipe_extended_status;
@@ -342,7 +342,7 @@ sub get_pipe_list {
 
 				if ( $pipe->at("#pipeStatus-$i")->find('a')->each ) {
 
-					$pipe_status = $pipe->at("#pipeStatus-$i")->at('a')->text;
+					$pipe_status = trim($pipe->at("#pipeStatus-$i")->at('a')->text);
 					if ( $pipe->at("#pipeStatus-$i")->find('img')->each ) {
 						$pipe_extended_status = $pipe->at("#pipeStatus-$i")->at('img')->attr('title');
 						# Fix: Take the first line of the extended status only as it could be a long Java Exception message
@@ -361,7 +361,7 @@ sub get_pipe_list {
 
 				}
 				else {
-					$pipe_status = $pipe->at("#pipeStatus-$i")->text;
+					$pipe_status = trim($pipe->at("#pipeStatus-$i")->text);
 				}
 
 				# Add information to the pipes array
@@ -420,3 +420,11 @@ sub get_login {
 	# Login failed
 	return 0;
 }
+
+# Left and right trim string from white spaces
+sub trim {
+	my $string = shift;
+	$string =~ s{^\s+|\s+$}{}g;
+	return $string;
+}
+
