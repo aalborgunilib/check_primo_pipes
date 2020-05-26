@@ -1,5 +1,5 @@
 # check_primo_pipes
-A plugin for Nagios (and other compatible monitoring services) to monitor the status of pipes in the Ex Libris Primo library discovery system. It will alert you in case of pipes ending up in the following states: stopped error, stopped harvest error, and threshold exceeded error. The alerts are cleared by terminating the pipes in question.
+A plugin for Nagios (and other compatible monitoring services) to monitor the status of pipes in the Ex Libris Primo library discovery system (no support for Primo VE). It will alert you in case of pipes ending up in the following states: stopped error, stopped harvest error, and threshold exceeded error. The alerts are cleared by terminating the pipes in question.
 
 The plugin also features a rudimentary support for identifying stalled pipes. This can be monitored if you provide an expected maximum time (a threshold in hours), any pipe would be expected to be in a running state and therefore not to be considered stalled. As soon as the threshold is exceeded, an alert is issued.
 
